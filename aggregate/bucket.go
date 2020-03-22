@@ -129,7 +129,7 @@ func Bucket(ctx context.Context, in, out string) error {
 
 	for bucket, points := range buckets {
 		object := client.Bucket(out).Object(
-			fmt.Sprintf("%v/%v.csv", bucket, time.Now().Unix()),
+			fmt.Sprintf("%v/%v.csv", bucket.ToToken(), time.Now().Unix()),
 		)
 
 		wc := object.NewWriter(ctx)
