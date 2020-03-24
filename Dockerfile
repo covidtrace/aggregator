@@ -1,8 +1,13 @@
-FROM golang:1.14
+FROM golang:1.14 AS builder
 
 WORKDIR /go/src/github.com/covidtrace/aggregator
+COPY go.mod .
+COPY go.sum .
+RUN go mod download
+
 COPY . .
-RUN go get -d -v ./...
 RUN go install -v ./...
 
+FROM golang:1.14
+COPY --from=builder /go/bin/serve /go/bin/serve
 CMD ["serve"]
