@@ -135,7 +135,13 @@ func Bucket(ctx context.Context, in, out string) error {
 		wc := object.NewWriter(ctx)
 		writer := csv.NewWriter(wc)
 		for _, point := range points {
-			err = writer.Write([]string{point.timestamp, point.cellID.Parent(20).ToToken(), point.status})
+			err = writer.Write([]string{
+				point.timestamp,
+				point.cellID.Parent(10).ToToken(),
+				point.cellID.Parent(18).ToToken(),
+				point.cellID.Parent(22).ToToken(),
+				point.status,
+			})
 			if err != nil {
 				return err
 			}
