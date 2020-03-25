@@ -11,34 +11,39 @@ import (
 	"os"
 
 	"github.com/covidtrace/worker/aggregate"
+	"github.com/covidtrace/worker/config"
 	"github.com/julienschmidt/httprouter"
 )
-
-func handler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	ctx := context.Background()
-
-	if err := aggregate.Bucket(ctx, "covidtrace-holding", "covidtrace-published"); err != nil {
-		panic(err)
-	}
-
-	m := struct {
-		Status string `json:"status"`
-	}{
-		Status: "success",
-	}
-
-	b, err := json.Marshal(m)
-	if err != nil {
-		panic(err)
-	}
-
-	io.Copy(w, bytes.NewReader(b))
-}
 
 func main() {
 	router := httprouter.New()
 
-	router.POST("/", handler)
+	router.POST("/", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+		ctx := context.Background()
+
+		config, err := config.Get()
+		if err != nil {
+			panic(err)
+		}
+
+		if err := aggregate.Bucket(ctx, config); err != nil {
+			panic(err)
+		}
+
+		m := struct {
+			Status string `json:"status"`
+		}{
+			Status: "success",
+		}
+
+		b, err := json.Marshal(m)
+		if err != nil {
+			panic(err)
+		}
+
+		io.Copy(w, bytes.NewReader(b))
+
+	})
 
 	router.PanicHandler = func(w http.ResponseWriter, _ *http.Request, _ interface{}) {
 		http.Error(w, "Unknown error", http.StatusBadRequest)

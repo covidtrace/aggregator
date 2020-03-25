@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/covidtrace/worker/config"
 	"github.com/golang/geo/s2"
 	"google.golang.org/api/iterator"
 )
@@ -80,8 +81,8 @@ func bucketPoints(points []point, level int) (pointBuckets, error) {
 	return bucket, nil
 }
 
-func Bucket(ctx context.Context, in, out string) error {
-	inbucket := client.Bucket(in)
+func Bucket(ctx context.Context, config *config.Config) error {
+	inbucket := client.Bucket(config.HoldingBucket)
 
 	query := &storage.Query{Prefix: ""}
 	query.SetAttrSelection([]string{"Name"})
@@ -122,13 +123,13 @@ func Bucket(ctx context.Context, in, out string) error {
 		points = append(points, p...)
 	}
 
-	buckets, err := bucketPoints(points, 5)
+	buckets, err := bucketPoints(points, config.AggS2Level)
 	if err != nil {
 		return err
 	}
 
 	for bucket, points := range buckets {
-		object := client.Bucket(out).Object(
+		object := client.Bucket(config.PublishedBucket).Object(
 			fmt.Sprintf("%v/%v.csv", bucket.ToToken(), time.Now().Unix()),
 		)
 
@@ -137,9 +138,8 @@ func Bucket(ctx context.Context, in, out string) error {
 		for _, point := range points {
 			err = writer.Write([]string{
 				point.timestamp,
-				point.cellID.Parent(10).ToToken(),
-				point.cellID.Parent(18).ToToken(),
-				point.cellID.Parent(22).ToToken(),
+				point.cellID.Parent(config.CompareS2Level).ToToken(),
+				point.cellID.Parent(config.LocalS2Level).ToToken(),
 				point.status,
 			})
 			if err != nil {
