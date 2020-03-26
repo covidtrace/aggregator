@@ -70,17 +70,6 @@ func parseCsv(reader io.Reader) ([]point, error) {
 	return points, nil
 }
 
-func bucketPoints(c *config.Config, points []point) (pointBuckets, error) {
-	bucket := make(pointBuckets)
-
-	for _, p := range points {
-		bcid := p.cellID.Parent(c.AggS2Level)
-		bucket[bcid] = append(bucket[bcid], p)
-	}
-
-	return bucket, nil
-}
-
 func getHoldingFiles(ctx context.Context, bucket string) ([]point, error) {
 	points := []point{}
 
@@ -121,6 +110,19 @@ func getHoldingFiles(ctx context.Context, bucket string) ([]point, error) {
 	}
 
 	return points, nil
+}
+
+func bucketPoints(c *config.Config, points []point) (pointBuckets, error) {
+	bucket := make(pointBuckets)
+
+	for _, p := range points {
+		for _, aggLevel := range c.AggS2Levels {
+			bcid := p.cellID.Parent(aggLevel)
+			bucket[bcid] = append(bucket[bcid], p)
+		}
+	}
+
+	return bucket, nil
 }
 
 func writePoints(ctx context.Context, c *config.Config, object *storage.ObjectHandle, points []point) error {
