@@ -148,6 +148,8 @@ func writePoints(ctx context.Context, c *config.Config, object *storage.ObjectHa
 	return wc.Close()
 }
 
+// Run handles aggregating all the input points in a holding bucket and publishing to
+// a publish bucket
 func Run(ctx context.Context, c *config.Config) error {
 	points, err := getHoldingFiles(ctx, c.HoldingBucket)
 	if err != nil {
