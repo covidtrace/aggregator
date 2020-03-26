@@ -70,19 +70,21 @@ func parseCsv(reader io.Reader) ([]point, error) {
 	return points, nil
 }
 
-func bucketPoints(points []point, level int) (pointBuckets, error) {
+func bucketPoints(c *config.Config, points []point) (pointBuckets, error) {
 	bucket := make(pointBuckets)
 
 	for _, p := range points {
-		bcid := p.cellID.Parent(level)
+		bcid := p.cellID.Parent(c.AggS2Level)
 		bucket[bcid] = append(bucket[bcid], p)
 	}
 
 	return bucket, nil
 }
 
-func Run(ctx context.Context, config *config.Config) error {
-	inbucket := client.Bucket(config.HoldingBucket)
+func getHoldingFiles(ctx context.Context, bucket string) ([]point, error) {
+	points := []point{}
+
+	inbucket := client.Bucket(bucket)
 
 	query := &storage.Query{Prefix: ""}
 	query.SetAttrSelection([]string{"Name"})
@@ -96,71 +98,75 @@ func Run(ctx context.Context, config *config.Config) error {
 			break
 		}
 		if err != nil {
-			return err
+			return points, err
 		}
 
 		names = append(names, attrs.Name)
 	}
 
-	if len(names) == 0 {
-		return nil
-	}
-
-	points := []point{}
 	for _, name := range names {
 		object := inbucket.Object(name)
 		reader, err := object.NewReader(ctx)
 		if err != nil {
-			return err
+			return points, err
 		}
 		defer reader.Close()
 
 		p, err := parseCsv(reader)
 		if err != nil {
-			return err
+			return points, err
 		}
 
 		points = append(points, p...)
 	}
 
-	buckets, err := bucketPoints(points, config.AggS2Level)
+	return points, nil
+}
+
+func writePoints(ctx context.Context, c *config.Config, object *storage.ObjectHandle, points []point) error {
+	wc := object.NewWriter(ctx)
+	writer := csv.NewWriter(wc)
+	for _, point := range points {
+		err := writer.Write([]string{
+			point.timestamp,
+			point.cellID.Parent(c.CompareS2Level).ToToken(),
+			point.cellID.Parent(c.LocalS2Level).ToToken(),
+			point.status,
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return err
+	}
+
+	return wc.Close()
+}
+
+func Run(ctx context.Context, c *config.Config) error {
+	points, err := getHoldingFiles(ctx, c.HoldingBucket)
+	if err != nil {
+		return err
+	}
+
+	if len(points) == 0 {
+		return nil
+	}
+
+	buckets, err := bucketPoints(c, points)
 	if err != nil {
 		return err
 	}
 
 	for bucket, points := range buckets {
-		object := client.Bucket(config.PublishedBucket).Object(
+		object := client.Bucket(c.PublishedBucket).Object(
 			fmt.Sprintf("%v/%v.csv", bucket.ToToken(), time.Now().Unix()),
 		)
 
-		wc := object.NewWriter(ctx)
-		writer := csv.NewWriter(wc)
-		for _, point := range points {
-			err = writer.Write([]string{
-				point.timestamp,
-				point.cellID.Parent(config.CompareS2Level).ToToken(),
-				point.cellID.Parent(config.LocalS2Level).ToToken(),
-				point.status,
-			})
-			if err != nil {
-				return err
-			}
-		}
-
-		writer.Flush()
-		if err := writer.Error(); err != nil {
-			return err
-		}
-
-		if err := wc.Close(); err != nil {
-			return err
-		}
-	}
-
-	for _, name := range names {
-		object := inbucket.Object(name)
-		err = object.Delete(ctx)
-		if err != nil {
+		if err = writePoints(ctx, c, object, points); err != nil {
 			return err
 		}
 	}
