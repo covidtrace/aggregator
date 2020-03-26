@@ -81,7 +81,7 @@ func bucketPoints(points []point, level int) (pointBuckets, error) {
 	return bucket, nil
 }
 
-func Bucket(ctx context.Context, config *config.Config) error {
+func Run(ctx context.Context, config *config.Config) error {
 	inbucket := client.Bucket(config.HoldingBucket)
 
 	query := &storage.Query{Prefix: ""}

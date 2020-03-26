@@ -13,7 +13,7 @@ func TestHandleEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = Bucket(context.Background(), config)
+	err = Run(context.Background(), config)
 	if err != nil {
 		t.Fatal(err)
 	}

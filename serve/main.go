@@ -26,7 +26,7 @@ func main() {
 			panic(err)
 		}
 
-		if err := aggregate.Bucket(ctx, config); err != nil {
+		if err := aggregate.Run(ctx, config); err != nil {
 			panic(err)
 		}
 
