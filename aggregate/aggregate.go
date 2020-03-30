@@ -70,7 +70,7 @@ func parseCsv(reader io.Reader) ([]point, error) {
 	return points, nil
 }
 
-func getHoldingFiles(ctx context.Context, bucket string) ([]point, error) {
+func getHoldingFiles(ctx context.Context, bucket string) ([]point, []string, error) {
 	points := []point{}
 
 	inbucket := client.Bucket(bucket)
@@ -87,7 +87,7 @@ func getHoldingFiles(ctx context.Context, bucket string) ([]point, error) {
 			break
 		}
 		if err != nil {
-			return points, err
+			return points, names, err
 		}
 
 		names = append(names, attrs.Name)
@@ -97,19 +97,19 @@ func getHoldingFiles(ctx context.Context, bucket string) ([]point, error) {
 		object := inbucket.Object(name)
 		reader, err := object.NewReader(ctx)
 		if err != nil {
-			return points, err
+			return points, names, err
 		}
 		defer reader.Close()
 
 		p, err := parseCsv(reader)
 		if err != nil {
-			return points, err
+			return points, names, err
 		}
 
 		points = append(points, p...)
 	}
 
-	return points, nil
+	return points, names, nil
 }
 
 func bucketPoints(c *config.Config, points []point) (pointBuckets, error) {
@@ -151,7 +151,7 @@ func writePoints(ctx context.Context, c *config.Config, object *storage.ObjectHa
 // Run handles aggregating all the input points in a holding bucket and publishing to
 // a publish bucket
 func Run(ctx context.Context, c *config.Config) error {
-	points, err := getHoldingFiles(ctx, c.HoldingBucket)
+	points, objects, err := getHoldingFiles(ctx, c.HoldingBucket)
 	if err != nil {
 		return err
 	}
@@ -171,6 +171,13 @@ func Run(ctx context.Context, c *config.Config) error {
 		)
 
 		if err = writePoints(ctx, c, object, points); err != nil {
+			return err
+		}
+	}
+
+	bucket := client.Bucket(c.HoldingBucket)
+	for _, name := range objects {
+		if err := bucket.Object(name).Delete(ctx); err != nil {
 			return err
 		}
 	}
