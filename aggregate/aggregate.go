@@ -5,6 +5,10 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"log"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -13,21 +17,10 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-var client *storage.Client
-
-func init() {
-	c, err := storage.NewClient(context.Background())
-	if err != nil {
-		panic(err)
-	}
-
-	client = c
-}
-
 type point struct {
-	timestamp string
+	timestamp time.Time
 	cellID    s2.CellID
-	status    string
+	verified  bool
 }
 
 type pointBuckets map[s2.CellID][]point
@@ -60,17 +53,26 @@ func parseCsv(reader io.Reader) ([]point, error) {
 			continue
 		}
 
-		timestamp := record[0]
-		cellID := s2.CellIDFromToken(record[1])
-		status := record[2]
+		if len(record) == 3 {
+			if timestamp, err := strconv.ParseInt(record[0], 10, 64); err != nil {
+				cellID := s2.CellIDFromToken(record[1])
+				verified := record[2] == "true"
 
-		points = append(points, point{timestamp: timestamp, cellID: cellID, status: status})
+				if cellID.IsValid() {
+					points = append(points, point{
+						timestamp: time.Unix(timestamp, 0),
+						cellID:    cellID,
+						verified:  verified,
+					})
+				}
+			}
+		}
 	}
 
 	return points, nil
 }
 
-func getHoldingFiles(ctx context.Context, bucket string) ([]point, []string, error) {
+func getHoldingFiles(ctx context.Context, client *storage.Client, bucket string) ([]point, []string, error) {
 	points := []point{}
 
 	inbucket := client.Bucket(bucket)
@@ -90,7 +92,9 @@ func getHoldingFiles(ctx context.Context, bucket string) ([]point, []string, err
 			return points, names, err
 		}
 
-		names = append(names, attrs.Name)
+		if strings.HasSuffix(attrs.Name, ".csv") {
+			names = append(names, attrs.Name)
+		}
 	}
 
 	for _, name := range names {
@@ -130,10 +134,9 @@ func writePoints(ctx context.Context, c *config.Config, object *storage.ObjectHa
 	writer := csv.NewWriter(wc)
 	for _, point := range points {
 		err := writer.Write([]string{
-			point.timestamp,
+			fmt.Sprintf("%v", point.timestamp.Unix()),
 			point.cellID.Parent(c.CompareS2Level).ToToken(),
-			point.cellID.Parent(c.LocalS2Level).ToToken(),
-			point.status,
+			fmt.Sprintf("%v", point.verified),
 		})
 		if err != nil {
 			return err
@@ -150,8 +153,8 @@ func writePoints(ctx context.Context, c *config.Config, object *storage.ObjectHa
 
 // Run handles aggregating all the input points in a holding bucket and publishing to
 // a publish bucket
-func Run(ctx context.Context, c *config.Config) error {
-	points, objects, err := getHoldingFiles(ctx, c.HoldingBucket)
+func Run(ctx context.Context, c *config.Config, s *storage.Client) error {
+	points, objects, err := getHoldingFiles(ctx, s, c.HoldingBucket)
 	if err != nil {
 		return err
 	}
@@ -165,17 +168,28 @@ func Run(ctx context.Context, c *config.Config) error {
 		return err
 	}
 
-	for bucket, points := range buckets {
-		object := client.Bucket(c.PublishedBucket).Object(
-			fmt.Sprintf("%v/%v.csv", bucket.ToToken(), time.Now().Unix()),
-		)
+	// Create a wait group to fan back in after uploading
+	var wg sync.WaitGroup
+	wg.Add(len(buckets))
 
-		if err = writePoints(ctx, c, object, points); err != nil {
-			return err
-		}
+	for bucket, points := range buckets {
+		go func(b s2.CellID, p []point) {
+			defer wg.Done()
+
+			o := s.Bucket(c.PublishedBucket).Object(
+				fmt.Sprintf("%v/%v.csv", b.ToToken(), time.Now().Unix()),
+			)
+
+			if err = writePoints(ctx, c, o, p); err != nil {
+				log.Println(err)
+				return
+			}
+		}(bucket, points)
 	}
 
-	bucket := client.Bucket(c.HoldingBucket)
+	wg.Wait()
+
+	bucket := s.Bucket(c.HoldingBucket)
 	for _, name := range objects {
 		if err := bucket.Object(name).Delete(ctx); err != nil {
 			return err
