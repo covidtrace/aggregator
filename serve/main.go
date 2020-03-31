@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"cloud.google.com/go/storage"
 	"github.com/covidtrace/worker/aggregate"
@@ -19,6 +20,8 @@ import (
 
 var storageClient *storage.Client
 
+var threshold int64 = 2097152 // split at 2Mbi by default
+
 func init() {
 	c, err := storage.NewClient(context.Background())
 	if err != nil {
@@ -26,6 +29,14 @@ func init() {
 	}
 
 	storageClient = c
+
+	if t := os.Getenv("HINTING_THRESHOLD"); t != "" {
+		var err error
+		threshold, err = strconv.ParseInt(t, 0, 64)
+		if err != nil {
+			panic(err)
+		}
+	}
 }
 
 type response struct {
@@ -71,7 +82,7 @@ func main() {
 			panic(err)
 		}
 
-		if err := hinting.Run(ctx, config, storageClient); err != nil {
+		if err := hinting.Run(ctx, config, storageClient, threshold); err != nil {
 			panic(err)
 		}
 
