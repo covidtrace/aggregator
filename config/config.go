@@ -7,12 +7,12 @@ import (
 )
 
 type Config struct {
+	ArchiveBucket   string `json:"archiveBucket"`
 	HoldingBucket   string `json:"holdingBucket"`
 	PublishedBucket string `json:"publishedBucket"`
 	AggS2Level      int    `json:"aggS2Level"`
 	AggS2Levels     []int  `json:"aggS2Levels"`
 	CompareS2Level  int    `json:"compareS2Level"`
-	LocalS2Level    int    `json:"localS2Level"`
 }
 
 func Get() (*Config, error) {

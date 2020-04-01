@@ -79,9 +79,12 @@ func Run(ctx context.Context, c *config.Config, s *storage.Client, threshold int
 	// Wait group to fan back in afer processing
 	var wg sync.WaitGroup
 	wg.Add(len(prefixes))
+	throttler := make(chan bool, 10)
 
 	for _, prefix := range prefixes {
+		throttler <- true
 		go func(p string) {
+			defer func() { <-throttler }()
 			defer wg.Done()
 
 			// Build s2 cell ID to compare level with most specific S2 level we aggregate at.

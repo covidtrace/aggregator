@@ -159,42 +159,67 @@ func Run(ctx context.Context, c *config.Config, s *storage.Client) error {
 		return err
 	}
 
-	if len(points) == 0 {
-		return nil
+	// Control goroutine concurrency
+	throttler := make(chan bool, 10)
+
+	if len(points) != 0 {
+		buckets, err := bucketPoints(c, points)
+		if err != nil {
+			return err
+		}
+
+		// Create a wait group to fan back in after uploading
+		var wg1 sync.WaitGroup
+		wg1.Add(len(buckets))
+
+		for bucket, points := range buckets {
+			throttler <- true
+			go func(b s2.CellID, p []point) {
+				defer func() { <-throttler }()
+				defer wg1.Done()
+
+				o := s.Bucket(c.PublishedBucket).Object(
+					fmt.Sprintf("%v/%v.csv", b.ToToken(), time.Now().Unix()),
+				)
+
+				if err = writePoints(ctx, c, o, p); err != nil {
+					log.Println(err)
+					return
+				}
+			}(bucket, points)
+		}
+
+		wg1.Wait()
 	}
 
-	buckets, err := bucketPoints(c, points)
-	if err != nil {
-		return err
-	}
+	sb := s.Bucket(c.HoldingBucket)
+	db := s.Bucket(c.ArchiveBucket)
 
-	// Create a wait group to fan back in after uploading
-	var wg sync.WaitGroup
-	wg.Add(len(buckets))
+	var wg2 sync.WaitGroup
+	wg2.Add(len(objects))
 
-	for bucket, points := range buckets {
-		go func(b s2.CellID, p []point) {
-			defer wg.Done()
+	for _, name := range objects {
+		throttler <- true
+		go func(n string) {
+			defer func() { <-throttler }()
+			defer wg2.Done()
 
-			o := s.Bucket(c.PublishedBucket).Object(
-				fmt.Sprintf("%v/%v.csv", b.ToToken(), time.Now().Unix()),
-			)
+			src := sb.Object(n)
+			dst := db.Object(n)
 
-			if err = writePoints(ctx, c, o, p); err != nil {
+			if _, err := dst.CopierFrom(src).Run(ctx); err != nil {
 				log.Println(err)
 				return
 			}
-		}(bucket, points)
+
+			if err := src.Delete(ctx); err != nil {
+				log.Println(err)
+				return
+			}
+		}(name)
 	}
 
-	wg.Wait()
-
-	bucket := s.Bucket(c.HoldingBucket)
-	for _, name := range objects {
-		if err := bucket.Object(name).Delete(ctx); err != nil {
-			return err
-		}
-	}
+	wg2.Wait()
 
 	return nil
 }
