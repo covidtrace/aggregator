@@ -205,7 +205,7 @@ func Run(ctx context.Context, c *config.Config, s *storage.Client) error {
 			defer wg2.Done()
 
 			src := sb.Object(n)
-			dst := db.Object(n)
+			dst := db.Object(fmt.Sprintf("holding/%s", n))
 
 			if _, err := dst.CopierFrom(src).Run(ctx); err != nil {
 				log.Println(err)
