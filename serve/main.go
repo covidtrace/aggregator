@@ -21,6 +21,7 @@ import (
 var storageClient *storage.Client
 
 var threshold int64 = 2097152 // split at 2Mbi by default
+var goroutineLimit int64 = 10
 
 func init() {
 	c, err := storage.NewClient(context.Background())
@@ -33,6 +34,14 @@ func init() {
 	if t := os.Getenv("HINTING_THRESHOLD"); t != "" {
 		var err error
 		threshold, err = strconv.ParseInt(t, 0, 64)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	if gl := os.Getenv("GOROUTINE_LIMIT"); gl != "" {
+		var err error
+		goroutineLimit, err = strconv.ParseInt(gl, 0, 64)
 		if err != nil {
 			panic(err)
 		}
@@ -65,7 +74,7 @@ func main() {
 			panic(err)
 		}
 
-		if err := aggregate.Run(ctx, config, storageClient); err != nil {
+		if err := aggregate.Run(ctx, config, storageClient, goroutineLimit); err != nil {
 			panic(err)
 		}
 
@@ -82,7 +91,7 @@ func main() {
 			panic(err)
 		}
 
-		if err := hinting.Run(ctx, config, storageClient, threshold); err != nil {
+		if err := hinting.Run(ctx, config, storageClient, goroutineLimit, threshold); err != nil {
 			panic(err)
 		}
 

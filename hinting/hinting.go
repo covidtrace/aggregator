@@ -62,7 +62,7 @@ func getSizes(ctx context.Context, bucket *storage.BucketHandle, p string) ([]in
 }
 
 // Run handles placing query hints in the bucket at relevant S2 geo levels
-func Run(ctx context.Context, c *config.Config, s *storage.Client, threshold int64) error {
+func Run(ctx context.Context, c *config.Config, s *storage.Client, throttle int64, threshold int64) error {
 	aggLevels := c.AggS2Levels
 	mostPreciseLevel := aggLevels[len(aggLevels)-1]
 
@@ -79,7 +79,7 @@ func Run(ctx context.Context, c *config.Config, s *storage.Client, threshold int
 	// Wait group to fan back in afer processing
 	var wg sync.WaitGroup
 	wg.Add(len(prefixes))
-	throttler := make(chan bool, 10)
+	throttler := make(chan bool, throttle)
 
 	for _, prefix := range prefixes {
 		throttler <- true

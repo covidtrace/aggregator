@@ -153,14 +153,14 @@ func writePoints(ctx context.Context, c *config.Config, object *storage.ObjectHa
 
 // Run handles aggregating all the input points in a holding bucket and publishing to
 // a publish bucket
-func Run(ctx context.Context, c *config.Config, s *storage.Client) error {
+func Run(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
 	points, objects, err := getHoldingFiles(ctx, s, c.HoldingBucket)
 	if err != nil {
 		return err
 	}
 
 	// Control goroutine concurrency
-	throttler := make(chan bool, 10)
+	throttler := make(chan bool, throttle)
 
 	if len(points) != 0 {
 		buckets, err := bucketPoints(c, points)

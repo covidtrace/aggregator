@@ -20,7 +20,7 @@ func TestRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = Run(context.Background(), config, client)
+	err = Run(context.Background(), config, client, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
