@@ -16,6 +16,7 @@ import (
 	"github.com/covidtrace/worker/config"
 	"github.com/covidtrace/worker/hinting"
 	"github.com/julienschmidt/httprouter"
+	"golang.org/x/sync/errgroup"
 )
 
 var storageClient *storage.Client
@@ -52,6 +53,10 @@ type response struct {
 	Success bool `json:"success"`
 }
 
+type errorResponse struct {
+	Message string `json:"message"`
+}
+
 func replyJSON(w http.ResponseWriter, code int, r interface{}) {
 	b, err := json.Marshal(r)
 	if err != nil {
@@ -67,15 +72,24 @@ func main() {
 	router := httprouter.New()
 
 	router.POST("/aggregate", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-		ctx := context.Background()
+		group, ctx := errgroup.WithContext(context.Background())
 
 		config, err := config.Get()
 		if err != nil {
 			panic(err)
 		}
 
-		if err := aggregate.Run(ctx, config, storageClient, goroutineLimit); err != nil {
-			panic(err)
+		group.Go(func() error {
+			return aggregate.Holding(ctx, config, storageClient, goroutineLimit)
+		})
+
+		group.Go(func() error {
+			return aggregate.Tokens(ctx, config, storageClient, goroutineLimit)
+		})
+
+		if err := group.Wait(); err != nil {
+			replyJSON(w, http.StatusInternalServerError, errorResponse{Message: err.Error()})
+			return
 		}
 
 		replyJSON(w, http.StatusOK, response{

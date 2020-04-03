@@ -5,15 +5,14 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"log"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/covidtrace/worker/config"
 	"github.com/golang/geo/s2"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"
 )
 
@@ -151,9 +150,13 @@ func writePoints(ctx context.Context, c *config.Config, object *storage.ObjectHa
 	return wc.Close()
 }
 
-// Run handles aggregating all the input points in a holding bucket and publishing to
+func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
+	return nil
+}
+
+// Holding handles aggregating all the input points in a holding bucket and publishing to
 // a publish bucket
-func Run(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
+func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
 	points, objects, err := getHoldingFiles(ctx, s, c.HoldingBucket)
 	if err != nil {
 		return err
@@ -169,57 +172,51 @@ func Run(ctx context.Context, c *config.Config, s *storage.Client, throttle int6
 		}
 
 		// Create a wait group to fan back in after uploading
-		var wg1 sync.WaitGroup
-		wg1.Add(len(buckets))
+		group, ectx := errgroup.WithContext(ctx)
 
 		for bucket, points := range buckets {
 			throttler <- true
-			go func(b s2.CellID, p []point) {
+
+			group.Go(func() error {
 				defer func() { <-throttler }()
-				defer wg1.Done()
 
 				o := s.Bucket(c.PublishedBucket).Object(
-					fmt.Sprintf("%v/%v.csv", b.ToToken(), time.Now().Unix()),
+					fmt.Sprintf("%v/%v.csv", bucket.ToToken(), time.Now().Unix()),
 				)
 
-				if err = writePoints(ctx, c, o, p); err != nil {
-					log.Println(err)
-					return
-				}
-			}(bucket, points)
+				return writePoints(ectx, c, o, points)
+			})
 		}
 
-		wg1.Wait()
+		if err := group.Wait(); err != nil {
+			return err
+		}
 	}
 
 	sb := s.Bucket(c.HoldingBucket)
 	db := s.Bucket(c.ArchiveBucket)
-
-	var wg2 sync.WaitGroup
-	wg2.Add(len(objects))
+	group, ectx := errgroup.WithContext(ctx)
 
 	for _, name := range objects {
 		throttler <- true
-		go func(n string) {
+
+		group.Go(func() error {
 			defer func() { <-throttler }()
-			defer wg2.Done()
 
-			src := sb.Object(n)
-			dst := db.Object(fmt.Sprintf("holding/%s", n))
+			src := sb.Object(name)
+			dst := db.Object(fmt.Sprintf("holding/%s", name))
 
-			if _, err := dst.CopierFrom(src).Run(ctx); err != nil {
-				log.Println(err)
-				return
+			if _, err := dst.CopierFrom(src).Run(ectx); err != nil {
+				return err
 			}
 
-			if err := src.Delete(ctx); err != nil {
-				log.Println(err)
-				return
+			if err := src.Delete(ectx); err != nil {
+				return err
 			}
-		}(name)
+
+			return nil
+		})
 	}
 
-	wg2.Wait()
-
-	return nil
+	return group.Wait()
 }

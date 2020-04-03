@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
-	"sync"
 
 	"cloud.google.com/go/storage"
 	"github.com/covidtrace/worker/config"
 	"github.com/golang/geo/s2"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"
 )
 
@@ -77,28 +76,25 @@ func Run(ctx context.Context, c *config.Config, s *storage.Client, throttle int6
 	}
 
 	// Wait group to fan back in afer processing
-	var wg sync.WaitGroup
-	wg.Add(len(prefixes))
 	throttler := make(chan bool, throttle)
+	group, ectx := errgroup.WithContext(ctx)
 
 	for _, prefix := range prefixes {
 		throttler <- true
-		go func(p string) {
+		group.Go(func() error {
 			defer func() { <-throttler }()
-			defer wg.Done()
 
 			// Build s2 cell ID to compare level with most specific S2 level we aggregate at.
 			// No use subdividing if we are looking at the most precise bucket already
-			sc := s2.CellIDFromToken(p[0 : len(p)-1])
+			sc := s2.CellIDFromToken(prefix[0 : len(prefix)-1])
 			if sc.IsValid() && sc.Level() == mostPreciseLevel {
-				return
+				return nil
 			}
 
 			// Fetch and sum up the object sizes of everything under this geo prefix
-			sizes, err := getSizes(ctx, bucket, p)
+			sizes, err := getSizes(ectx, bucket, prefix)
 			if err != nil {
-				log.Println(err)
-				return
+				return err
 			}
 
 			var total int64 = 0
@@ -108,24 +104,19 @@ func Run(ctx context.Context, c *config.Config, s *storage.Client, throttle int6
 
 			// Subdivide if necessary
 			if total > threshold {
-				key := fmt.Sprintf("%s0_HINT", p)
-				ow := bucket.Object(key).NewWriter(ctx)
+				key := fmt.Sprintf("%s0_HINT", prefix)
+				ow := bucket.Object(key).NewWriter(ectx)
 
-				_, err := io.WriteString(ow, "")
-				if err != nil {
-					log.Println(err)
-					return
+				if _, err := io.WriteString(ow, ""); err != nil {
+					return err
 				}
 
-				if err := ow.Close(); err != nil {
-					log.Println(err)
-					return
-				}
+				return ow.Close()
 			}
-		}(prefix)
+
+			return nil
+		})
 	}
 
-	wg.Wait()
-
-	return nil
+	return group.Wait()
 }
