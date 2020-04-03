@@ -54,7 +54,7 @@ func parseCsv(reader io.Reader) ([]point, error) {
 		}
 
 		if len(record) == 3 {
-			if timestamp, err := strconv.ParseInt(record[0], 10, 64); err != nil {
+			if timestamp, err := strconv.ParseInt(record[0], 10, 64); err == nil {
 				cellID := s2.CellIDFromToken(record[1])
 				verified := record[2] == "true"
 
