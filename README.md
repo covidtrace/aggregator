@@ -1,6 +1,6 @@
-# worker
+# aggregator
 
-The worker repository holds source code to aggregate and transform CovidTrace location and testing data.
+The aggregator repository holds source code to aggregate and transform CovidTrace location and testing data.
 
 ### Jobs
 

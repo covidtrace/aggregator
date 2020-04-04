@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/covidtrace/worker/config"
+	"github.com/covidtrace/aggregator/config"
 	"github.com/golang/geo/s2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"

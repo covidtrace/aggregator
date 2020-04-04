@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"cloud.google.com/go/storage"
-	"github.com/covidtrace/worker/config"
+	"github.com/covidtrace/aggregator/config"
 )
 
 func TestRun(t *testing.T) {

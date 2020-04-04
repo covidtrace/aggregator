@@ -12,9 +12,9 @@ import (
 	"strconv"
 
 	"cloud.google.com/go/storage"
-	"github.com/covidtrace/worker/aggregate"
-	"github.com/covidtrace/worker/config"
-	"github.com/covidtrace/worker/hinting"
+	"github.com/covidtrace/aggregator/aggregate"
+	"github.com/covidtrace/aggregator/config"
+	"github.com/covidtrace/aggregator/hinting"
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/sync/errgroup"
 )

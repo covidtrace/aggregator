@@ -1,4 +1,4 @@
-module github.com/covidtrace/worker
+module github.com/covidtrace/aggregator
 
 go 1.14
 
