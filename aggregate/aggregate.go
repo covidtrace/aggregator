@@ -16,6 +16,10 @@ import (
 	"google.golang.org/api/iterator"
 )
 
+type objects []string
+type record []string
+type records []record
+
 type point struct {
 	timestamp time.Time
 	cellID    s2.CellID
@@ -24,102 +28,113 @@ type point struct {
 
 type pointBuckets map[s2.CellID][]point
 
-func parseCsv(reader io.Reader) ([]point, error) {
-	points := []point{}
-
-	records := csv.NewReader(reader)
-
-	records.FieldsPerRecord = 3
-	records.ReuseRecord = true
-	records.TrimLeadingSpace = true
-
-	_, err := records.Read()
-	if err == io.EOF {
-		return points, nil
-	}
-
-	if err != nil {
-		return points, err
-	}
-
-	for {
-		record, err := records.Read()
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			continue
-		}
-
-		if len(record) == 3 {
-			if timestamp, err := strconv.ParseInt(record[0], 10, 64); err == nil {
-				cellID := s2.CellIDFromToken(record[1])
-				verified := record[2] == "true"
-
-				if cellID.IsValid() {
-					points = append(points, point{
-						timestamp: time.Unix(timestamp, 0),
-						cellID:    cellID,
-						verified:  verified,
-					})
-				}
-			}
-		}
-	}
-
-	return points, nil
+type token struct {
+	uuid   string
+	cellID s2.CellID
 }
 
-func getHoldingFiles(ctx context.Context, client *storage.Client, bucket string) ([]point, []string, error) {
-	points := []point{}
+type tokenBuckets map[s2.CellID][]token
 
-	inbucket := client.Bucket(bucket)
+func getCSVObjects(ctx context.Context, bucket *storage.BucketHandle, fpr int) (records, objects, error) {
+	rs := records{}
+	obs := objects{}
 
-	query := &storage.Query{Prefix: ""}
-	query.SetAttrSelection([]string{"Name"})
+	q := &storage.Query{Prefix: ""}
+	q.SetAttrSelection([]string{"Name"})
 
-	objects := inbucket.Objects(ctx, query)
-	names := []string{}
+	it := bucket.Objects(ctx, q)
 
 	for {
-		attrs, err := objects.Next()
+		attrs, err := it.Next()
 		if err == iterator.Done {
 			break
 		}
 		if err != nil {
-			return points, names, err
+			return rs, obs, err
 		}
 
 		if strings.HasSuffix(attrs.Name, ".csv") {
-			names = append(names, attrs.Name)
+			obs = append(obs, attrs.Name)
 		}
 	}
 
-	for _, name := range names {
-		object := inbucket.Object(name)
-		reader, err := object.NewReader(ctx)
+	for _, n := range obs {
+		o := bucket.Object(n)
+		or, err := o.NewReader(ctx)
 		if err != nil {
-			return points, names, err
+			return rs, obs, err
 		}
-		defer reader.Close()
+		defer or.Close()
 
-		p, err := parseCsv(reader)
-		if err != nil {
-			return points, names, err
+		cr := csv.NewReader(or)
+		cr.FieldsPerRecord = fpr
+		cr.ReuseRecord = true
+		cr.TrimLeadingSpace = true
+
+		if _, err := cr.Read(); err == io.EOF {
+			return rs, obs, nil
+		} else if err != nil {
+			return rs, obs, err
 		}
 
-		points = append(points, p...)
+		for {
+			if r, err := cr.Read(); err == io.EOF {
+				break
+			} else if err != nil {
+				continue
+			} else if len(r) == fpr {
+				rs = append(rs, r)
+			}
+		}
 	}
 
-	return points, names, nil
+	return rs, obs, nil
+}
+
+func recordsToPoints(rs records) []point {
+	points := make([]point, len(rs))
+
+	for _, r := range rs {
+		if ts, err := strconv.ParseInt(r[0], 10, 64); err == nil {
+			cellID := s2.CellIDFromToken(r[1])
+			v := r[2] == "true"
+
+			if cellID.IsValid() {
+				points = append(points, point{
+					timestamp: time.Unix(ts, 0),
+					cellID:    cellID,
+					verified:  v,
+				})
+			}
+		}
+	}
+
+	return points
+}
+
+func recordsToTokens(rs records) []token {
+	tokens := make([]token, len(rs))
+
+	for _, r := range rs {
+		uuid := r[0]
+		cellID := s2.CellIDFromToken(r[1])
+
+		if cellID.IsValid() {
+			tokens = append(tokens, token{
+				uuid:   uuid,
+				cellID: cellID,
+			})
+		}
+	}
+
+	return tokens
 }
 
 func bucketPoints(c *config.Config, points []point) (pointBuckets, error) {
 	bucket := make(pointBuckets)
 
 	for _, p := range points {
-		for _, aggLevel := range c.AggS2Levels {
+		for _, aggLevel := range c.AggLevels {
 			bcid := p.cellID.Parent(aggLevel)
 			bucket[bcid] = append(bucket[bcid], p)
 		}
@@ -128,42 +143,93 @@ func bucketPoints(c *config.Config, points []point) (pointBuckets, error) {
 	return bucket, nil
 }
 
-func writePoints(ctx context.Context, c *config.Config, object *storage.ObjectHandle, points []point) error {
+func bucketTokens(c *config.Config, tokens []token) (tokenBuckets, error) {
+	buckets := make(tokenBuckets)
+
+	for _, t := range tokens {
+		bcid := t.cellID.Parent(c.ExposureLevel)
+		buckets[bcid] = append(buckets[bcid], t)
+	}
+
+	return buckets, nil
+}
+
+func writeRecords(ctx context.Context, object *storage.ObjectHandle, rs records) error {
 	wc := object.NewWriter(ctx)
-	writer := csv.NewWriter(wc)
-	for _, point := range points {
-		err := writer.Write([]string{
-			fmt.Sprintf("%v", point.timestamp.Unix()),
-			point.cellID.Parent(c.CompareS2Level).ToToken(),
-			fmt.Sprintf("%v", point.verified),
-		})
-		if err != nil {
+	w := csv.NewWriter(wc)
+	for _, r := range rs {
+		if err := w.Write(r); err != nil {
 			return err
 		}
 	}
 
-	writer.Flush()
-	if err := writer.Error(); err != nil {
+	w.Flush()
+	if err := w.Error(); err != nil {
 		return err
 	}
 
 	return wc.Close()
 }
 
-func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
-	return nil
+func pointsToRecords(c *config.Config, points []point) records {
+	rs := make(records, len(points))
+	for _, p := range points {
+		rs = append(rs, record{
+			fmt.Sprintf("%v", p.timestamp.Unix()),
+			p.cellID.Parent(c.CompareLevel).ToToken(),
+			fmt.Sprintf("%v", p.verified),
+		})
+	}
+	return rs
+}
+
+func tokensToRecords(c *config.Config, tokens []token) records {
+	records := make(records, len(tokens))
+	for _, t := range tokens {
+		records = append(records, record{t.uuid})
+	}
+	return records
+}
+
+func archiveObjects(ctx context.Context, src, dst *storage.BucketHandle, pre string, obs objects, sem chan bool) error {
+	group, ectx := errgroup.WithContext(ctx)
+
+	for _, name := range obs {
+		sem <- true
+
+		group.Go(func() error {
+			defer func() { <-sem }()
+
+			so := src.Object(name)
+			do := dst.Object(fmt.Sprintf("%s/%s", pre, name))
+
+			if _, err := do.CopierFrom(so).Run(ectx); err != nil {
+				return err
+			}
+
+			if err := so.Delete(ectx); err != nil {
+				return err
+			}
+
+			return nil
+		})
+	}
+
+	return group.Wait()
 }
 
 // Holding handles aggregating all the input points in a holding bucket and publishing to
 // a publish bucket
 func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
-	points, objects, err := getHoldingFiles(ctx, s, c.HoldingBucket)
+	records, objects, err := getCSVObjects(ctx, s.Bucket(c.HoldingBucket), 3)
 	if err != nil {
 		return err
 	}
 
+	points := recordsToPoints(records)
+
 	// Control goroutine concurrency
-	throttler := make(chan bool, throttle)
+	sem := make(chan bool, throttle)
 
 	if len(points) != 0 {
 		buckets, err := bucketPoints(c, points)
@@ -175,16 +241,16 @@ func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle 
 		group, ectx := errgroup.WithContext(ctx)
 
 		for bucket, points := range buckets {
-			throttler <- true
+			sem <- true
 
 			group.Go(func() error {
-				defer func() { <-throttler }()
+				defer func() { <-sem }()
 
 				o := s.Bucket(c.PublishedBucket).Object(
-					fmt.Sprintf("%v/%v.csv", bucket.ToToken(), time.Now().Unix()),
+					fmt.Sprintf("%v/%v.points.csv", bucket.ToToken(), time.Now().Unix()),
 				)
 
-				return writePoints(ectx, c, o, points)
+				return writeRecords(ectx, o, pointsToRecords(c, points))
 			})
 		}
 
@@ -193,30 +259,63 @@ func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle 
 		}
 	}
 
-	sb := s.Bucket(c.HoldingBucket)
-	db := s.Bucket(c.ArchiveBucket)
-	group, ectx := errgroup.WithContext(ctx)
+	return archiveObjects(
+		ctx,
+		s.Bucket(c.HoldingBucket),
+		s.Bucket(c.ArchiveBucket),
+		"holding",
+		objects,
+		sem,
+	)
+}
 
-	for _, name := range objects {
-		throttler <- true
-
-		group.Go(func() error {
-			defer func() { <-throttler }()
-
-			src := sb.Object(name)
-			dst := db.Object(fmt.Sprintf("holding/%s", name))
-
-			if _, err := dst.CopierFrom(src).Run(ectx); err != nil {
-				return err
-			}
-
-			if err := src.Delete(ectx); err != nil {
-				return err
-			}
-
-			return nil
-		})
+// Tokens handles aggregating all the input tokens in a holding bucket and publishing to
+// a publish bucket
+func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
+	records, objects, err := getCSVObjects(ctx, s.Bucket(c.TokenBucket), 2)
+	if err != nil {
+		return err
 	}
 
-	return group.Wait()
+	tokens := recordsToTokens(records)
+
+	// Control goroutine concurrency
+	sem := make(chan bool, throttle)
+
+	if len(tokens) != 0 {
+		buckets, err := bucketTokens(c, tokens)
+		if err != nil {
+			return err
+		}
+
+		// Create a wait group to fan back in after uploading
+		group, ectx := errgroup.WithContext(ctx)
+
+		for bucket, tokens := range buckets {
+			sem <- true
+
+			group.Go(func() error {
+				defer func() { <-sem }()
+
+				o := s.Bucket(c.PublishedBucket).Object(
+					fmt.Sprintf("%v/%v.tokens.csv", bucket.ToToken(), time.Now().Unix()),
+				)
+
+				return writeRecords(ectx, o, tokensToRecords(c, tokens))
+			})
+		}
+
+		if err := group.Wait(); err != nil {
+			return err
+		}
+	}
+
+	return archiveObjects(
+		ctx,
+		s.Bucket(c.TokenBucket),
+		s.Bucket(c.ArchiveBucket),
+		"tokens",
+		objects,
+		sem,
+	)
 }

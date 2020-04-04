@@ -62,7 +62,7 @@ func getSizes(ctx context.Context, bucket *storage.BucketHandle, p string) ([]in
 
 // Run handles placing query hints in the bucket at relevant S2 geo levels
 func Run(ctx context.Context, c *config.Config, s *storage.Client, throttle int64, threshold int64) error {
-	aggLevels := c.AggS2Levels
+	aggLevels := c.AggLevels
 	mostPreciseLevel := aggLevels[len(aggLevels)-1]
 
 	bucket := s.Bucket(c.PublishedBucket)

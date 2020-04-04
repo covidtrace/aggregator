@@ -10,9 +10,10 @@ type Config struct {
 	ArchiveBucket   string `json:"archiveBucket"`
 	HoldingBucket   string `json:"holdingBucket"`
 	PublishedBucket string `json:"publishedBucket"`
-	AggS2Level      int    `json:"aggS2Level"`
-	AggS2Levels     []int  `json:"aggS2Levels"`
-	CompareS2Level  int    `json:"compareS2Level"`
+	TokenBucket     string `json:"tokenBucket"`
+	AggLevels       []int  `json:"aggS2Levels"`
+	CompareLevel    int    `json:"compareS2Level"`
+	ExposureLevel   int    `json:"exposureS2Level"`
 }
 
 func Get() (*Config, error) {
