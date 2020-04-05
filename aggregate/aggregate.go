@@ -232,6 +232,10 @@ func archiveObjects(ctx context.Context, src, dst *storage.BucketHandle, pre str
 	return group.Wait()
 }
 
+func csvObjectName(cid s2.CellID, ts time.Time, t string) string {
+	return fmt.Sprintf("%s/%v.%s.csv", cid.ToToken(), ts.Unix(), t)
+}
+
 // Holding handles aggregating all the input points in a holding bucket and publishing to
 // a publish bucket
 func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
@@ -261,11 +265,7 @@ func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle 
 
 			group.Go(func() error {
 				defer func() { <-sem }()
-
-				o := s.Bucket(c.PublishedBucket).Object(
-					fmt.Sprintf("%v/%v.points.csv", bucket.ToToken(), time.Now().Unix()),
-				)
-
+				o := s.Bucket(c.PublishedBucket).Object(csvObjectName(bucket, time.Now(), "points"))
 				return writeRecords(ectx, o, pointsToRecords(c, points))
 			})
 		}
@@ -314,11 +314,7 @@ func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle i
 
 			group.Go(func() error {
 				defer func() { <-sem }()
-
-				o := s.Bucket(c.PublishedBucket).Object(
-					fmt.Sprintf("%v/%v.tokens.csv", bucket.ToToken(), time.Now().Unix()),
-				)
-
+				o := s.Bucket(c.PublishedBucket).Object(csvObjectName(bucket, time.Now(), "tokens"))
 				return writeRecords(ectx, o, tokensToRecords(c, tokens))
 			})
 		}
