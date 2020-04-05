@@ -35,22 +35,21 @@ type token struct {
 
 type tokenBuckets map[s2.CellID][]token
 
-func getCSVObjects(ctx context.Context, bucket *storage.BucketHandle, fpr int) (records, objects, error) {
-	rs := records{}
+func getObjectReaders(ctx context.Context, bucket *storage.BucketHandle) ([]io.ReadCloser, objects, error) {
+	rds := []io.ReadCloser{}
 	obs := objects{}
 
 	q := &storage.Query{Prefix: ""}
 	q.SetAttrSelection([]string{"Name"})
 
 	it := bucket.Objects(ctx, q)
-
 	for {
 		attrs, err := it.Next()
 		if err == iterator.Done {
 			break
 		}
 		if err != nil {
-			return rs, obs, err
+			return rds, obs, err
 		}
 
 		if strings.HasSuffix(attrs.Name, ".csv") {
@@ -60,21 +59,34 @@ func getCSVObjects(ctx context.Context, bucket *storage.BucketHandle, fpr int) (
 
 	for _, n := range obs {
 		o := bucket.Object(n)
-		or, err := o.NewReader(ctx)
-		if err != nil {
-			return rs, obs, err
+		if or, err := o.NewReader(ctx); err != nil {
+			return rds, obs, err
+		} else {
+			rds = append(rds, or)
 		}
-		defer or.Close()
+	}
 
-		cr := csv.NewReader(or)
-		cr.FieldsPerRecord = fpr
-		cr.ReuseRecord = true
-		cr.TrimLeadingSpace = true
+	return rds, obs, nil
+}
+
+func csvReader(r io.Reader, fpr int) *csv.Reader {
+	cr := csv.NewReader(r)
+	cr.FieldsPerRecord = fpr
+	cr.ReuseRecord = false
+	cr.TrimLeadingSpace = true
+	return cr
+}
+
+func getRecords(rds []io.ReadCloser, fpr int) (records, error) {
+	rs := records{}
+
+	for _, r := range rds {
+		cr := csvReader(r, fpr)
 
 		if _, err := cr.Read(); err == io.EOF {
-			return rs, obs, nil
+			return rs, nil
 		} else if err != nil {
-			return rs, obs, err
+			return rs, err
 		}
 
 		for {
@@ -86,13 +98,15 @@ func getCSVObjects(ctx context.Context, bucket *storage.BucketHandle, fpr int) (
 				rs = append(rs, r)
 			}
 		}
+
+		r.Close()
 	}
 
-	return rs, obs, nil
+	return rs, nil
 }
 
 func recordsToPoints(rs records) []point {
-	points := make([]point, len(rs))
+	points := []point{}
 
 	for _, r := range rs {
 		if ts, err := strconv.ParseInt(r[0], 10, 64); err == nil {
@@ -113,7 +127,7 @@ func recordsToPoints(rs records) []point {
 }
 
 func recordsToTokens(rs records) []token {
-	tokens := make([]token, len(rs))
+	tokens := []token{}
 
 	for _, r := range rs {
 		uuid := r[0]
@@ -130,7 +144,7 @@ func recordsToTokens(rs records) []token {
 	return tokens
 }
 
-func bucketPoints(c *config.Config, points []point) (pointBuckets, error) {
+func bucketPoints(c *config.Config, points []point) pointBuckets {
 	bucket := make(pointBuckets)
 
 	for _, p := range points {
@@ -140,10 +154,10 @@ func bucketPoints(c *config.Config, points []point) (pointBuckets, error) {
 		}
 	}
 
-	return bucket, nil
+	return bucket
 }
 
-func bucketTokens(c *config.Config, tokens []token) (tokenBuckets, error) {
+func bucketTokens(c *config.Config, tokens []token) tokenBuckets {
 	buckets := make(tokenBuckets)
 
 	for _, t := range tokens {
@@ -151,7 +165,7 @@ func bucketTokens(c *config.Config, tokens []token) (tokenBuckets, error) {
 		buckets[bcid] = append(buckets[bcid], t)
 	}
 
-	return buckets, nil
+	return buckets
 }
 
 func writeRecords(ctx context.Context, object *storage.ObjectHandle, rs records) error {
@@ -221,7 +235,12 @@ func archiveObjects(ctx context.Context, src, dst *storage.BucketHandle, pre str
 // Holding handles aggregating all the input points in a holding bucket and publishing to
 // a publish bucket
 func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
-	records, objects, err := getCSVObjects(ctx, s.Bucket(c.HoldingBucket), 3)
+	readers, objects, err := getObjectReaders(ctx, s.Bucket(c.HoldingBucket))
+	if err != nil {
+		return err
+	}
+
+	records, err := getRecords(readers, 3)
 	if err != nil {
 		return err
 	}
@@ -232,10 +251,7 @@ func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle 
 	sem := make(chan bool, throttle)
 
 	if len(points) != 0 {
-		buckets, err := bucketPoints(c, points)
-		if err != nil {
-			return err
-		}
+		buckets := bucketPoints(c, points)
 
 		// Create a wait group to fan back in after uploading
 		group, ectx := errgroup.WithContext(ctx)
@@ -272,7 +288,12 @@ func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle 
 // Tokens handles aggregating all the input tokens in a holding bucket and publishing to
 // a publish bucket
 func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
-	records, objects, err := getCSVObjects(ctx, s.Bucket(c.TokenBucket), 2)
+	readers, objects, err := getObjectReaders(ctx, s.Bucket(c.TokenBucket))
+	if err != nil {
+		return err
+	}
+
+	records, err := getRecords(readers, 2)
 	if err != nil {
 		return err
 	}
@@ -283,10 +304,7 @@ func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle i
 	sem := make(chan bool, throttle)
 
 	if len(tokens) != 0 {
-		buckets, err := bucketTokens(c, tokens)
-		if err != nil {
-			return err
-		}
+		buckets := bucketTokens(c, tokens)
 
 		// Create a wait group to fan back in after uploading
 		group, ectx := errgroup.WithContext(ctx)
