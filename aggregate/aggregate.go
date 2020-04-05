@@ -59,11 +59,12 @@ func getObjectReaders(ctx context.Context, bucket *storage.BucketHandle) ([]io.R
 
 	for _, n := range obs {
 		o := bucket.Object(n)
-		if or, err := o.NewReader(ctx); err != nil {
+		or, err := o.NewReader(ctx)
+		if err != nil {
 			return rds, obs, err
-		} else {
-			rds = append(rds, or)
 		}
+
+		rds = append(rds, or)
 	}
 
 	return rds, obs, nil
