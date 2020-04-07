@@ -29,8 +29,9 @@ type point struct {
 type pointBuckets map[s2.CellID][]point
 
 type token struct {
-	uuid   string
-	cellID s2.CellID
+	timestamp time.Time
+	uuid      string
+	cellID    s2.CellID
 }
 
 type tokenBuckets map[s2.CellID][]token
@@ -131,14 +132,17 @@ func recordsToTokens(rs records) []token {
 	tokens := []token{}
 
 	for _, r := range rs {
-		uuid := r[0]
-		cellID := s2.CellIDFromToken(r[1])
+		if ts, err := strconv.ParseInt(r[0], 10, 64); err == nil {
+			uuid := r[1]
+			cellID := s2.CellIDFromToken(r[2])
 
-		if cellID.IsValid() {
-			tokens = append(tokens, token{
-				uuid:   uuid,
-				cellID: cellID,
-			})
+			if cellID.IsValid() {
+				tokens = append(tokens, token{
+					timestamp: time.Unix(ts, 0),
+					uuid:      uuid,
+					cellID:    cellID,
+				})
+			}
 		}
 	}
 
@@ -201,7 +205,7 @@ func pointsToRecords(c *config.Config, points []point) records {
 func tokensToRecords(c *config.Config, tokens []token) records {
 	records := make(records, len(tokens))
 	for _, t := range tokens {
-		records = append(records, record{t.uuid})
+		records = append(records, record{fmt.Sprintf("%v", t.timestamp.Unix()), t.uuid})
 	}
 	return records
 }
@@ -294,7 +298,7 @@ func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle i
 		return err
 	}
 
-	records, err := getRecords(readers, 2)
+	records, err := getRecords(readers, 3)
 	if err != nil {
 		return err
 	}

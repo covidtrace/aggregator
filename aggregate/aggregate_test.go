@@ -88,7 +88,7 @@ func TestRecordsToPoints(t *testing.T) {
 }
 
 func TestRecordsToTokens(t *testing.T) {
-	rs := records{record{"uuid", "54906ad"}}
+	rs := records{record{"1586291781", "uuid", "54906ad"}}
 	tokens := recordsToTokens(rs)
 
 	if len(tokens) != 1 {
@@ -96,6 +96,10 @@ func TestRecordsToTokens(t *testing.T) {
 	}
 
 	token := tokens[0]
+
+	if token.timestamp.Unix() != 1586291781 {
+		t.Errorf("Unexpected token.timestamp: %v", token.timestamp.Unix())
+	}
 
 	if token.uuid != "uuid" {
 		t.Errorf("Unexpected token.uuid: %v", token.uuid)
@@ -128,8 +132,8 @@ func TestBucketPoints(t *testing.T) {
 
 func TestBucketTokens(t *testing.T) {
 	tokens := []token{
-		token{"uuid1", s2.CellIDFromToken("808fb5b0be4b")},
-		token{"uuid2", s2.CellIDFromToken("5490153531d3")},
+		token{time.Now(), "uuid1", s2.CellIDFromToken("808fb5b0be4b")},
+		token{time.Now(), "uuid2", s2.CellIDFromToken("5490153531d3")},
 	}
 
 	buckets := bucketTokens(c, tokens)
@@ -144,5 +148,4 @@ func TestBucketTokens(t *testing.T) {
 	if _, ok := buckets[s2.CellIDFromToken("549015")]; !ok {
 		t.Errorf("Expected to find 549015 in buckets")
 	}
-
 }
