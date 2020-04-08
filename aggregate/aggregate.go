@@ -79,18 +79,22 @@ func csvReader(r io.Reader, fpr int) *csv.Reader {
 	return cr
 }
 
-func getRecords(rds []io.ReadCloser, fpr int) (records, error) {
+func getRecords(rds []io.ReadCloser, sh bool, fpr int) (records, error) {
 	rs := records{}
 
 	for _, r := range rds {
 		cr := csvReader(r, fpr)
 
-		if _, err := cr.Read(); err == io.EOF {
-			return rs, nil
-		} else if err != nil {
-			return rs, err
+		// Skip header row if instructed
+		if sh {
+			if _, err := cr.Read(); err == io.EOF {
+				return rs, nil
+			} else if err != nil {
+				return rs, err
+			}
 		}
 
+		// Read remaining rows
 		for {
 			if r, err := cr.Read(); err == io.EOF {
 				break
@@ -192,22 +196,22 @@ func writeRecords(ctx context.Context, object *storage.ObjectHandle, rs records)
 
 func pointsToRecords(c *config.Config, points []point) records {
 	rs := make(records, len(points))
-	for _, p := range points {
-		rs = append(rs, record{
+	for i, p := range points {
+		rs[i] = record{
 			fmt.Sprintf("%v", p.timestamp.Unix()),
 			p.cellID.Parent(c.CompareLevel).ToToken(),
 			fmt.Sprintf("%v", p.verified),
-		})
+		}
 	}
 	return rs
 }
 
 func tokensToRecords(c *config.Config, tokens []token) records {
-	records := make(records, len(tokens))
-	for _, t := range tokens {
-		records = append(records, record{fmt.Sprintf("%v", t.timestamp.Unix()), t.uuid})
+	rs := make(records, len(tokens))
+	for i, t := range tokens {
+		rs[i] = record{fmt.Sprintf("%v", t.timestamp.Unix()), t.uuid}
 	}
-	return records
+	return rs
 }
 
 func archiveObjects(ctx context.Context, src, dst *storage.BucketHandle, pre string, obs objects, sem chan bool) error {
@@ -249,7 +253,7 @@ func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle 
 		return err
 	}
 
-	records, err := getRecords(readers, 3)
+	records, err := getRecords(readers, true, 3)
 	if err != nil {
 		return err
 	}
@@ -298,7 +302,7 @@ func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle i
 		return err
 	}
 
-	records, err := getRecords(readers, 3)
+	records, err := getRecords(readers, true, 3)
 	if err != nil {
 		return err
 	}

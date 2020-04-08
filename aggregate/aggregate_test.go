@@ -40,13 +40,11 @@ func TestHolding(t *testing.T) {
 }
 
 func TestGetRecords(t *testing.T) {
-	rdr := strings.NewReader("foo,bar,baz\r\n1,2,3\r\n4,5,6")
-
 	readers := []io.ReadCloser{
-		ioutil.NopCloser(rdr),
+		ioutil.NopCloser(strings.NewReader("foo,bar,baz\r\n1,2,3\r\n4,5,6")),
 	}
 
-	records, err := getRecords(readers, 3)
+	records, err := getRecords(readers, true, 3)
 	if err != nil {
 		t.Errorf("getRecords: %v", err)
 	}
@@ -61,6 +59,19 @@ func TestGetRecords(t *testing.T) {
 
 	if records[1][0] != "4" {
 		t.Errorf("Unexpected records[1][0]: %v", records[1][0])
+	}
+
+	readers = []io.ReadCloser{
+		ioutil.NopCloser(strings.NewReader("foo,bar,baz\r\n1,2,3\r\n4,5,6")),
+	}
+
+	records, err = getRecords(readers, false, 3)
+	if err != nil {
+		t.Errorf("getRecords: %v", err)
+	}
+
+	if len(records) != 3 {
+		t.Errorf("Unexpected len(records): %v", len(records))
 	}
 }
 
