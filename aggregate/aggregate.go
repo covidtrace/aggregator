@@ -157,8 +157,8 @@ func bucketPoints(c *config.Config, points []point) pointBuckets {
 	bucket := make(pointBuckets)
 
 	for _, p := range points {
-		for _, aggLevel := range c.AggLevels {
-			bcid := p.cellID.Parent(aggLevel)
+		for _, level := range c.AggLevels {
+			bcid := p.cellID.Parent(level)
 			bucket[bcid] = append(bucket[bcid], p)
 		}
 	}
@@ -170,8 +170,10 @@ func bucketTokens(c *config.Config, tokens []token) tokenBuckets {
 	buckets := make(tokenBuckets)
 
 	for _, t := range tokens {
-		bcid := t.cellID.Parent(c.ExposureLevel)
-		buckets[bcid] = append(buckets[bcid], t)
+		for _, level := range c.AggLevels {
+			bcid := t.cellID.Parent(level)
+			buckets[bcid] = append(buckets[bcid], t)
+		}
 	}
 
 	return buckets

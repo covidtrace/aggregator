@@ -123,8 +123,8 @@ func TestRecordsToTokens(t *testing.T) {
 
 func TestBucketPoints(t *testing.T) {
 	points := []point{
-		point{time.Now(), s2.CellIDFromToken("808fb5b0be4b"), false},
-		point{time.Now(), s2.CellIDFromToken("5490153531d3"), false},
+		{time.Now(), s2.CellIDFromToken("808fb5b0be4b"), false},
+		{time.Now(), s2.CellIDFromToken("5490153531d3"), false},
 	}
 
 	buckets := bucketPoints(c, points)
@@ -143,8 +143,8 @@ func TestBucketPoints(t *testing.T) {
 
 func TestBucketTokens(t *testing.T) {
 	tokens := []token{
-		token{time.Now(), "uuid1", s2.CellIDFromToken("808fb5b0be4b")},
-		token{time.Now(), "uuid2", s2.CellIDFromToken("5490153531d3")},
+		{time.Now(), "uuid1", s2.CellIDFromToken("808fb5b0be4b")},
+		{time.Now(), "uuid2", s2.CellIDFromToken("5490153531d3")},
 	}
 
 	buckets := bucketTokens(c, tokens)
