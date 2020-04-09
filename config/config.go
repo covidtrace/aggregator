@@ -2,10 +2,20 @@ package config
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"net/http"
+	"os"
 )
 
+var configFile string
+
+func init() {
+	configFile = os.Getenv("CONFIG_FILE")
+	if configFile == "" {
+		configFile = "https://storage.googleapis.com/covidtrace-config/config.json"
+	}
+}
+
+// Config is the structure describing a configuration file
 type Config struct {
 	ArchiveBucket   string `json:"archiveBucket"`
 	HoldingBucket   string `json:"holdingBucket"`
@@ -16,20 +26,16 @@ type Config struct {
 	ExposureLevel   int    `json:"exposureS2Level"`
 }
 
+// Get fetches and unmarshals
 func Get() (*Config, error) {
-	resp, err := http.Get("https://storage.googleapis.com/covidtrace-config/config.json")
+	resp, err := http.Get(configFile)
 	if err != nil {
 		return nil, err
 	}
-
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
 
 	var config Config
-	if err := json.Unmarshal(body, &config); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&config); err != nil {
 		return nil, err
 	}
 
