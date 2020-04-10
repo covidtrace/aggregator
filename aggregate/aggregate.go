@@ -211,7 +211,11 @@ func pointsToRecords(c *config.Config, points []point) records {
 func tokensToRecords(c *config.Config, tokens []token) records {
 	rs := make(records, len(tokens))
 	for i, t := range tokens {
-		rs[i] = record{fmt.Sprintf("%v", t.timestamp.Unix()), t.uuid}
+		rs[i] = record{
+			fmt.Sprintf("%v", t.timestamp.Unix()),
+			t.uuid,
+			t.cellID.Parent(c.CompareLevel).ToToken(),
+		}
 	}
 	return rs
 }
