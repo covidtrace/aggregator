@@ -39,6 +39,18 @@ func TestHolding(t *testing.T) {
 	}
 }
 
+func TestTokens(t *testing.T) {
+	ctx := context.Background()
+	s, err := storage.NewClient(ctx)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if err := Tokens(ctx, c, s, 1); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestGetRecords(t *testing.T) {
 	readers := []io.ReadCloser{
 		ioutil.NopCloser(strings.NewReader("foo,bar,baz\r\n1,2,3\r\n4,5,6")),
