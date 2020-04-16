@@ -160,7 +160,7 @@ func TestBucketTokens(t *testing.T) {
 	}
 
 	buckets := bucketTokens(c, tokens)
-	if len(buckets) != 2 {
+	if len(buckets) != 6 {
 		t.Errorf("Unexpected len(buckets): %v", len(buckets))
 	}
 
