@@ -227,6 +227,7 @@ func archiveObjects(ctx context.Context, src, dst *storage.BucketHandle, pre str
 	group, ectx := errgroup.WithContext(ctx)
 
 	for _, name := range obs {
+		name := name // https://golang.org/doc/faq#closures_and_goroutines
 		sem <- true
 
 		group.Go(func() error {
@@ -282,6 +283,7 @@ func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle 
 		group, ectx := errgroup.WithContext(ctx)
 
 		for bucket, points := range buckets {
+			bucket, points := bucket, points // https://golang.org/doc/faq#closures_and_goroutines
 			sem <- true
 
 			group.Go(func() error {
@@ -334,6 +336,7 @@ func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle i
 		group, ectx := errgroup.WithContext(ctx)
 
 		for bucket, tokens := range buckets {
+			bucket, tokens := bucket, tokens // https://golang.org/doc/faq#closures_and_goroutines
 			sem <- true
 
 			group.Go(func() error {
