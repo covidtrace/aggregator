@@ -413,7 +413,6 @@ func ExposureKeys(ctx context.Context, c *config.Config, s *storage.Client, thro
 
 	// Control goroutine concurrency
 	sem := make(chan bool, throttle)
-	sem <- true
 
 	if len(keys) != 0 {
 		name := fmt.Sprintf("%v.csv", time.Now().Unix())
