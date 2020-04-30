@@ -17,13 +17,15 @@ var c *config.Config
 
 func init() {
 	c = &config.Config{
-		ArchiveBucket:   "covidtrace-archive",
-		HoldingBucket:   "covidtrace-holding",
-		PublishedBucket: "covidtrace-published",
-		TokenBucket:     "covidtrace-tokens",
-		AggLevels:       []int{8, 10, 12},
-		CompareLevel:    18,
-		ExposureLevel:   10,
+		ArchiveBucket:               "covidtrace-archive",
+		HoldingBucket:               "covidtrace-holding",
+		PublishedBucket:             "covidtrace-published",
+		TokenBucket:                 "covidtrace-tokens",
+		ExposureKeysHoldingBucket:   "covidtrace-exposure-keys-holding",
+		ExposureKeysPublishedBucket: "covidtrace-exposure-keys-published",
+		AggLevels:                   []int{8, 10, 12},
+		CompareLevel:                18,
+		ExposureLevel:               10,
 	}
 }
 
@@ -47,6 +49,18 @@ func TestTokens(t *testing.T) {
 	}
 
 	if err := Tokens(ctx, c, s, 1); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestExposureKeys(t *testing.T) {
+	ctx := context.Background()
+	s, err := storage.NewClient(ctx)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if err := ExposureKeys(ctx, c, s, 1); err != nil {
 		t.Error(err)
 	}
 }

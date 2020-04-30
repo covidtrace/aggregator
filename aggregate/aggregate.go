@@ -37,6 +37,11 @@ type token struct {
 
 type tokenBuckets map[s2.CellID][]token
 
+type exposureKey struct {
+	keyData            string
+	rollingStartNumber int64
+}
+
 func getObjectReaders(ctx context.Context, bucket *storage.BucketHandle) ([]io.ReadCloser, objects, error) {
 	rds := []io.ReadCloser{}
 	obs := objects{}
@@ -154,6 +159,23 @@ func recordsToTokens(rs records) []token {
 	return tokens
 }
 
+func recordsToExposureKeys(rs records) []exposureKey {
+	keys := []exposureKey{}
+
+	for _, r := range rs {
+		if rollingStartNumber, err := strconv.ParseInt(r[1], 10, 64); err == nil {
+			keyData := r[0]
+
+			keys = append(keys, exposureKey{
+				keyData:            keyData,
+				rollingStartNumber: rollingStartNumber,
+			})
+		}
+	}
+
+	return keys
+}
+
 func bucketPoints(c *config.Config, points []point) pointBuckets {
 	bucket := make(pointBuckets)
 
@@ -218,6 +240,17 @@ func tokensToRecords(c *config.Config, tokens []token) records {
 			fmt.Sprintf("%v", t.timestamp.Unix()),
 			t.uuid,
 			t.cellID.Parent(c.CompareLevel).ToToken(),
+		}
+	}
+	return rs
+}
+
+func expsoreKeysToRecords(c *config.Config, keys []exposureKey) records {
+	rs := make(records, len(keys))
+	for i, k := range keys {
+		rs[i] = record{
+			k.keyData,
+			fmt.Sprintf("%v", k.rollingStartNumber),
 		}
 	}
 	return rs
@@ -357,6 +390,46 @@ func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle i
 		s.Bucket(c.TokenBucket),
 		s.Bucket(c.ArchiveBucket),
 		"tokens",
+		objects,
+		sem,
+	)
+}
+
+// ExposureKeys handles aggregating all the input expsorue keys in a holding bucket and publishing to
+// a publish bucket
+func ExposureKeys(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
+	readers, objects, err := getObjectReaders(ctx, s.Bucket(c.ExposureKeysHoldingBucket))
+	if err != nil {
+		return err
+	}
+
+	records, err := getRecords(readers, true, 3)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	keys := recordsToExposureKeys(records)
+
+	// Control goroutine concurrency
+	sem := make(chan bool, throttle)
+
+	if len(keys) != 0 {
+		name := fmt.Sprintf("%v.csv", time.Now().Unix())
+		o := s.Bucket(c.ExposureKeysPublishedBucket).Object(name)
+		err := writeRecords(ctx, o, expsoreKeysToRecords(c, keys))
+
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+	}
+
+	return archiveObjects(
+		ctx,
+		s.Bucket(c.ExposureKeysHoldingBucket),
+		s.Bucket(c.ArchiveBucket),
+		"exposureKeys",
 		objects,
 		sem,
 	)

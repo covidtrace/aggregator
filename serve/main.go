@@ -87,6 +87,10 @@ func main() {
 			return aggregate.Tokens(ctx, config, storageClient, goroutineLimit)
 		})
 
+		group.Go(func() error {
+			return aggregate.ExposureKeys(ctx, config, storageClient, goroutineLimit)
+		})
+
 		if err := group.Wait(); err != nil {
 			replyJSON(w, http.StatusInternalServerError, errorResponse{Message: err.Error()})
 			return
