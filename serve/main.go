@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -15,60 +13,34 @@ import (
 	"github.com/covidtrace/aggregator/aggregate"
 	"github.com/covidtrace/aggregator/config"
 	"github.com/covidtrace/aggregator/hinting"
+	"github.com/covidtrace/utils/env"
+	httputils "github.com/covidtrace/utils/http"
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/sync/errgroup"
 )
-
-var storageClient *storage.Client
-
-var threshold int64 = 2097152 // split at 2Mbi by default
-var goroutineLimit int64 = 10
-
-func init() {
-	c, err := storage.NewClient(context.Background())
-	if err != nil {
-		panic(err)
-	}
-
-	storageClient = c
-
-	if t := os.Getenv("HINTING_THRESHOLD"); t != "" {
-		var err error
-		threshold, err = strconv.ParseInt(t, 0, 64)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	if gl := os.Getenv("GOROUTINE_LIMIT"); gl != "" {
-		var err error
-		goroutineLimit, err = strconv.ParseInt(gl, 0, 64)
-		if err != nil {
-			panic(err)
-		}
-	}
-}
 
 type response struct {
 	Success bool `json:"success"`
 }
 
-type errorResponse struct {
-	Message string `json:"message"`
-}
-
-func replyJSON(w http.ResponseWriter, code int, r interface{}) {
-	b, err := json.Marshal(r)
+func main() {
+	storageClient, err := storage.NewClient(context.Background())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		panic(err)
 	}
 
-	w.WriteHeader(code)
-	io.Copy(w, bytes.NewReader(b))
-}
+	// split at 2MiB by default
+	threshold, err := strconv.ParseInt(env.GetDefault("HINTING_THRESHOLD", "2097152"), 0, 64)
+	if err != nil {
+		panic(err)
+	}
 
-func main() {
+	// 10 goroutines max by default
+	goroutineLimit, err := strconv.ParseInt(env.GetDefault("GOROUTINE_LIMIT", "10"), 0, 64)
+	if err != nil {
+		panic(err)
+	}
+
 	router := httprouter.New()
 
 	router.POST("/aggregate", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -76,7 +48,9 @@ func main() {
 
 		config, err := config.Get()
 		if err != nil {
-			panic(err)
+			fmt.Fprintln(os.Stderr, err)
+			httputils.ReplyInternalServerError(w, err)
+			return
 		}
 
 		group.Go(func() error {
@@ -92,13 +66,12 @@ func main() {
 		})
 
 		if err := group.Wait(); err != nil {
-			replyJSON(w, http.StatusInternalServerError, errorResponse{Message: err.Error()})
+			fmt.Fprintln(os.Stderr, err)
+			httputils.ReplyInternalServerError(w, err)
 			return
 		}
 
-		replyJSON(w, http.StatusOK, response{
-			Success: true,
-		})
+		httputils.ReplyJSON(w, response{Success: true}, http.StatusOK)
 	})
 
 	router.POST("/hinting", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -106,26 +79,23 @@ func main() {
 
 		config, err := config.Get()
 		if err != nil {
-			panic(err)
+			fmt.Fprintln(os.Stderr, err)
+			httputils.ReplyInternalServerError(w, err)
+			return
 		}
 
 		if err := hinting.Run(ctx, config, storageClient, goroutineLimit, threshold); err != nil {
-			panic(err)
+			fmt.Fprintln(os.Stderr, err)
+			httputils.ReplyInternalServerError(w, err)
+			return
 		}
 
-		replyJSON(w, http.StatusOK, response{
-			Success: true,
-		})
+		httputils.ReplyJSON(w, response{Success: true}, http.StatusOK)
 	})
 
 	router.PanicHandler = func(w http.ResponseWriter, _ *http.Request, _ interface{}) {
-		http.Error(w, "Unknown error", http.StatusBadRequest)
+		httputils.ReplyInternalServerError(w, errors.New("internal server error"))
 	}
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), router))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", env.GetDefault("port", "8080")), router))
 }
