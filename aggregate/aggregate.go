@@ -166,16 +166,18 @@ func recordsToExposureKeys(rs records) []exposureKey {
 
 	for _, r := range rs {
 		keyData := r[0]
-		rollingPeriod, _ := strconv.ParseInt(r[1], 10, 64)
-		rollingStartNumber, _ := strconv.ParseInt(r[2], 10, 64)
-		transmissionRiskLevel, _ := strconv.ParseInt(r[3], 10, 64)
+		rollingPeriod, errRP := strconv.ParseInt(r[1], 10, 64)
+		rollingStartNumber, errSN := strconv.ParseInt(r[2], 10, 64)
+		transmissionRiskLevel, errTRL := strconv.ParseInt(r[3], 10, 64)
 
-		keys = append(keys, exposureKey{
-			keyData:               keyData,
-			rollingPeriod:         rollingPeriod,
-			rollingStartNumber:    rollingStartNumber,
-			transmissionRiskLevel: transmissionRiskLevel,
-		})
+		if errRP == nil && errSN == nil && errTRL == nil {
+			keys = append(keys, exposureKey{
+				keyData:               keyData,
+				rollingPeriod:         rollingPeriod,
+				rollingStartNumber:    rollingStartNumber,
+				transmissionRiskLevel: transmissionRiskLevel,
+			})
+		}
 	}
 
 	return keys
