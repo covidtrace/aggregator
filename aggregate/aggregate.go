@@ -412,7 +412,7 @@ func ExposureKeys(ctx context.Context, c *config.Config, s *storage.Client, thro
 		return err
 	}
 
-	records, err := getRecords(readers, true, 5)
+	records, err := getRecords(readers, true, 4)
 	if err != nil {
 		log.Println(err)
 		return err
