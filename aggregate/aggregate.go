@@ -38,8 +38,10 @@ type token struct {
 type tokenBuckets map[s2.CellID][]token
 
 type exposureKey struct {
-	keyData            string
-	rollingStartNumber int64
+	keyData               string
+	rollingPeriod         int64
+	rollingStartNumber    int64
+	transmissionRiskLevel int64
 }
 
 func getObjectReaders(ctx context.Context, bucket *storage.BucketHandle) ([]io.ReadCloser, objects, error) {
@@ -163,12 +165,17 @@ func recordsToExposureKeys(rs records) []exposureKey {
 	keys := []exposureKey{}
 
 	for _, r := range rs {
-		if rollingStartNumber, err := strconv.ParseInt(r[1], 10, 64); err == nil {
-			keyData := r[0]
+		keyData := r[0]
+		rollingPeriod, errRP := strconv.ParseInt(r[1], 10, 64)
+		rollingStartNumber, errSN := strconv.ParseInt(r[2], 10, 64)
+		transmissionRiskLevel, errTRL := strconv.ParseInt(r[3], 10, 64)
 
+		if errRP == nil && errSN == nil && errTRL == nil {
 			keys = append(keys, exposureKey{
-				keyData:            keyData,
-				rollingStartNumber: rollingStartNumber,
+				keyData:               keyData,
+				rollingPeriod:         rollingPeriod,
+				rollingStartNumber:    rollingStartNumber,
+				transmissionRiskLevel: transmissionRiskLevel,
 			})
 		}
 	}
@@ -250,7 +257,9 @@ func expsoreKeysToRecords(c *config.Config, keys []exposureKey) records {
 	for i, k := range keys {
 		rs[i] = record{
 			k.keyData,
+			fmt.Sprintf("%v", k.rollingPeriod),
 			fmt.Sprintf("%v", k.rollingStartNumber),
+			fmt.Sprintf("%v", k.transmissionRiskLevel),
 		}
 	}
 	return rs
@@ -403,7 +412,7 @@ func ExposureKeys(ctx context.Context, c *config.Config, s *storage.Client, thro
 		return err
 	}
 
-	records, err := getRecords(readers, true, 3)
+	records, err := getRecords(readers, true, 4)
 	if err != nil {
 		log.Println(err)
 		return err
