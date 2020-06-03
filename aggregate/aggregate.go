@@ -5,7 +5,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -214,14 +213,12 @@ func writeRecords(ctx context.Context, object *storage.ObjectHandle, rs records)
 	w := csv.NewWriter(wc)
 	for _, r := range rs {
 		if err := w.Write(r); err != nil {
-			log.Println(err)
 			return err
 		}
 	}
 
 	w.Flush()
 	if err := w.Error(); err != nil {
-		log.Println(err)
 		return err
 	}
 
@@ -279,12 +276,10 @@ func archiveObjects(ctx context.Context, src, dst *storage.BucketHandle, pre str
 			do := dst.Object(fmt.Sprintf("%s/%s", pre, name))
 
 			if _, err := do.CopierFrom(so).Run(ectx); err != nil {
-				log.Println(err)
 				return err
 			}
 
 			if err := so.Delete(ectx); err != nil {
-				log.Println(err)
 				return err
 			}
 
@@ -309,7 +304,6 @@ func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle 
 
 	records, err := getRecords(readers, true, 3)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
@@ -336,7 +330,6 @@ func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle 
 		}
 
 		if err := group.Wait(); err != nil {
-			log.Println(err)
 			return err
 		}
 	}
@@ -356,13 +349,11 @@ func Holding(ctx context.Context, c *config.Config, s *storage.Client, throttle 
 func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle int64) error {
 	readers, objects, err := getObjectReaders(ctx, s.Bucket(c.TokenBucket))
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
 	records, err := getRecords(readers, true, 3)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
@@ -389,7 +380,6 @@ func Tokens(ctx context.Context, c *config.Config, s *storage.Client, throttle i
 		}
 
 		if err := group.Wait(); err != nil {
-			log.Println(err)
 			return err
 		}
 	}
@@ -414,7 +404,6 @@ func ExposureKeys(ctx context.Context, c *config.Config, s *storage.Client, thro
 
 	records, err := getRecords(readers, true, 4)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
@@ -429,7 +418,6 @@ func ExposureKeys(ctx context.Context, c *config.Config, s *storage.Client, thro
 		err := writeRecords(ctx, o, expsoreKeysToRecords(c, keys))
 
 		if err != nil {
-			log.Println(err)
 			return err
 		}
 	}

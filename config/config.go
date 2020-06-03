@@ -3,17 +3,9 @@ package config
 import (
 	"encoding/json"
 	"net/http"
-	"os"
+
+	"github.com/covidtrace/utils/env"
 )
-
-var configFile string
-
-func init() {
-	configFile = os.Getenv("CONFIG_FILE")
-	if configFile == "" {
-		configFile = "https://storage.googleapis.com/covidtrace-config/config.json"
-	}
-}
 
 // Config is the structure describing a configuration file
 type Config struct {
@@ -30,7 +22,9 @@ type Config struct {
 
 // Get fetches and unmarshals
 func Get() (*Config, error) {
-	resp, err := http.Get(configFile)
+	resp, err := http.Get(
+		env.GetDefault("CONFIG_FILE", "https://storage.googleapis.com/covidtrace-config/config.json"),
+	)
 	if err != nil {
 		return nil, err
 	}
